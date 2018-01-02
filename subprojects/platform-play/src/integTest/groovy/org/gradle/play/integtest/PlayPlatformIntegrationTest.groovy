@@ -56,6 +56,9 @@ model {
     }
 }
 """
+        if(playVersion.startsWith('2.2')){
+            executer.expectDeprecationWarning()
+        }
 
         succeeds("stage")
 
@@ -124,6 +127,9 @@ model {
 }
 """
         then:
+        if (playVersion.startsWith('2.2')) {
+            executer.expectDeprecationWarning()
+        }
         fails "assemble"
 
         and:
