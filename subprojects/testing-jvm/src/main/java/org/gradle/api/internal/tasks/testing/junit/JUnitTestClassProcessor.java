@@ -70,4 +70,10 @@ public class JUnitTestClassProcessor implements TestClassProcessor {
     public void stop() {
         resultProcessorActor.stop();
     }
+
+    @Override
+    public void stopNow() {
+        // TODO(adamb): do nothing?  This method should *never* be called?
+        resultProcessorActor.stop();
+    }
 }
