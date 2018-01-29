@@ -30,6 +30,7 @@ dependencies {
     implementation project(":logging")
 
     implementation libraries.commons_io
+    implementation libraries.cfuture
 
     jmh libraries.ant
     jmh libraries.commons_compress
