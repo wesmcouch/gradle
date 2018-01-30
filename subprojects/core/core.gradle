@@ -60,6 +60,7 @@ dependencies {
     implementation libraries.nativePlatform
     implementation libraries.commons_compress
     implementation libraries.xmlApis
+    implementation libraries.cfuture
 
     runtimeOnly project(":docs")
 
