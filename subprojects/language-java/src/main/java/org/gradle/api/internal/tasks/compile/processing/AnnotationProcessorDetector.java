@@ -17,8 +17,11 @@
 package org.gradle.api.internal.tasks.compile.processing;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Enums;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
 import org.apache.tools.zip.ZipEntry;
@@ -37,11 +40,16 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Inspects a classpath to find annotation processors contained in it.
  */
 public class AnnotationProcessorDetector {
+
+    public static final String PROCESSOR_DECLARATION = "META-INF/services/javax.annotation.processing.Processor";
+    public static final String INCREMENTAL_PROCESSOR_DECLARATION = "META-INF/gradle/incremental.annotation.processors";
+
     private final FileContentCache<List<AnnotationProcessorDeclaration>> cache;
 
     public AnnotationProcessorDetector(FileContentCacheFactory cacheFactory) {
@@ -57,6 +65,7 @@ public class AnnotationProcessorDetector {
     }
 
     private static class ProcessorServiceLocator implements FileContentCacheFactory.Calculator<List<AnnotationProcessorDeclaration>> {
+
         @Override
         public List<AnnotationProcessorDeclaration> calculate(File file, FileType fileType) {
             if (fileType == FileType.Directory) {
@@ -69,12 +78,25 @@ public class AnnotationProcessorDetector {
         }
 
         private List<AnnotationProcessorDeclaration> detectProcessorsInClassesDir(File classesDir) {
-            File processorDeclaration = new File(classesDir, "META-INF/services/javax.annotation.processing.Processor");
+            return toProcessorDeclarations(getProcessorClassNames(classesDir), getProcessorTypes(classesDir));
+        }
+
+
+        private List<String> getProcessorClassNames(File classesDir) {
+            File processorDeclaration = new File(classesDir, PROCESSOR_DECLARATION);
             if (!processorDeclaration.isFile()) {
                 return Collections.emptyList();
             }
-            List<String> processorNames = readLines(processorDeclaration);
-            return toProcessorDeclarations(processorNames);
+            return readLines(processorDeclaration);
+        }
+
+        private Map<String, IncrementalAnnotationProcessorType> getProcessorTypes(File classesDir) {
+            File incrementalProcessorDeclaration = new File(classesDir, INCREMENTAL_PROCESSOR_DECLARATION);
+            if (!incrementalProcessorDeclaration.isFile()) {
+                return Collections.emptyMap();
+            }
+            List<String> lines = readLines(incrementalProcessorDeclaration);
+            return parseIncrementalProcessors(lines);
         }
 
         private List<String> readLines(File file) {
@@ -100,12 +122,24 @@ public class AnnotationProcessorDetector {
         }
 
         private List<AnnotationProcessorDeclaration> detectProcessorsInZipFile(ZipFile zipFile) throws IOException {
-            ZipEntry processorDeclaration = zipFile.getEntry("META-INF/services/javax.annotation.processing.Processor");
+            return toProcessorDeclarations(getProcessorClassNames(zipFile), getProcessorTypes(zipFile));
+        }
+
+        private List<String> getProcessorClassNames(ZipFile zipFile) throws IOException {
+            ZipEntry processorDeclaration = zipFile.getEntry(PROCESSOR_DECLARATION);
             if (processorDeclaration == null) {
                 return Collections.emptyList();
             }
-            List<String> processorNames = readLines(zipFile, processorDeclaration);
-            return toProcessorDeclarations(processorNames);
+            return readLines(zipFile, processorDeclaration);
+        }
+
+        private Map<String, IncrementalAnnotationProcessorType> getProcessorTypes(ZipFile zipFile) throws IOException {
+            ZipEntry incrementalProcessorDeclaration = zipFile.getEntry(INCREMENTAL_PROCESSOR_DECLARATION);
+            if (incrementalProcessorDeclaration == null) {
+                return Collections.emptyMap();
+            }
+            List<String> lines = readLines(zipFile, incrementalProcessorDeclaration);
+            return parseIncrementalProcessors(lines);
         }
 
         private List<String> readLines(ZipFile zipFile, ZipEntry zipEntry) throws IOException {
@@ -117,13 +151,29 @@ public class AnnotationProcessorDetector {
             }
         }
 
-        private List<AnnotationProcessorDeclaration> toProcessorDeclarations(List<String> processorNames) {
+        private Map<String, IncrementalAnnotationProcessorType> parseIncrementalProcessors(List<String> lines) {
+            Map<String, IncrementalAnnotationProcessorType> types = Maps.newHashMap();
+            for (String line : lines) {
+                List<String> parts = Splitter.on('=').splitToList(line);
+                IncrementalAnnotationProcessorType type = parseProcessorType(parts);
+                types.put(parts.get(0), type);
+            }
+            return types;
+        }
+
+        private IncrementalAnnotationProcessorType parseProcessorType(List<String> parts) {
+            return Enums.getIfPresent(IncrementalAnnotationProcessorType.class, parts.get(1).toUpperCase()).or(IncrementalAnnotationProcessorType.UNKNOWN);
+        }
+
+        private List<AnnotationProcessorDeclaration> toProcessorDeclarations(List<String> processorNames, Map<String, IncrementalAnnotationProcessorType> processorTypes) {
             if (processorNames.isEmpty()) {
                 return Collections.emptyList();
             }
             ImmutableList.Builder<AnnotationProcessorDeclaration> processors = ImmutableList.builder();
             for (String name : processorNames) {
-                processors.add(new AnnotationProcessorDeclaration(name));
+                IncrementalAnnotationProcessorType type = processorTypes.get(name);
+                type = type != null ? type : IncrementalAnnotationProcessorType.UNKNOWN;
+                processors.add(new AnnotationProcessorDeclaration(name, type));
             }
             return processors.build();
         }
