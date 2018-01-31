@@ -19,8 +19,8 @@ plugins {
 }
 
 dependencies {
-    compile libraries.groovy
-    compile libraries.commons_io
+    compile libraries.groovy.coordinate
+    compile libraries.commons_io.coordinate
     compile project(':core')
     compile project(':platformBase')
     compile project(':diagnostics')
